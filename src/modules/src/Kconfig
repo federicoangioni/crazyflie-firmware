@@ -218,6 +218,21 @@ config MOTORS_NBR_OF_POLES
     help
         This is used for RPM calculation and requires bi-directional DSHOT.
 
+config MOTORS_DSHOT_FLAPPER_SERVOS
+  bool "Drive the Flapper servos on M1/M3 while using DSHOT"
+  depends on MOTORS_ESC_PROTOCOL_DSHOT
+  depends on POWER_DISTRIBUTION_FLAPPER && !POWER_DISTRIBUTION_FLAPPER_REVB
+  default n
+    help
+        With DSHOT, TIM2 runs at the DSHOT bit rate and can no longer generate
+        servo PWM on M1 (pitch servo) and M3 (yaw servo). This option drives them
+        with 400 Hz, 1-2 ms servo PWM from other timers instead:
+        M1 (PA1) is remapped to TIM5_CH2, M3 (PA15) is bit-banged as a GPIO
+        from a TIM6 interrupt. RPM telemetry is only available for M2 and M4.
+
+        TIM5 is reserved for M1, so the buzzer deck, the rpm deck and the
+        servo deck on TX2/RX2 (which all reconfigure TIM5) must be disabled.
+
 config MOTORS_REQUIRE_ARMING
     bool "Require arming to be able to start motors and take off"
     default n

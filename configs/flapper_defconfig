@@ -3,15 +3,37 @@ CONFIG_PLATFORM_FLAPPER=y
 CONFIG_ESTIMATOR_AUTO_SELECT=y
 CONFIG_CONTROLLER_PID=y
 
-CONFIG_MOTORS_ESC_PROTOCOL_STANDARD_PWM=y
+# Bidirectional DSHOT300 makes the M2/M4 ESCs report eRPM back, which is logged as
+# motor.m2_rpm / motor.m4_rpm. Requires ESCs running Bluejay (or BLHeli_32/AM32) with
+# bidirectional DSHOT enabled in the ESC settings.
+#
+# DSHOT runs TIM2 at the DSHOT bit rate, so it cannot drive the pitch (M1) and yaw (M3)
+# servos. CONFIG_MOTORS_DSHOT_FLAPPER_SERVOS moves M1 to TIM5_CH2 and bit-bangs M3 from
+# TIM6 (400 Hz, 1-2 ms, same as standard PWM). TIM5 is then reserved for M1, so the
+# buzzer and rpm decks (which reconfigure TIM5) are disabled below.
+# Without it the servos MUST be disconnected (bidirectional DSHOT idles the line high).
+CONFIG_MOTORS_ESC_PROTOCOL_DSHOT=y
+CONFIG_MOTORS_DSHOT_FLAPPER_SERVOS=y
+CONFIG_DECK_BUZZ=n
+CONFIG_DECK_RPM=n
+CONFIG_MOTORS_DSHOT_PWM_300KHZ=y
+CONFIG_MOTORS_ESC_PROTOCOL_DSHOT_BIDIRECTIONAL=y
+# Verify against the actual Flapper motor before trusting the RPM scale: count the rotor
+# magnets. RPM is computed as eRPM * 2 / poles.
+CONFIG_MOTORS_NBR_OF_POLES=10
 
 CONFIG_CONTROLLER_PID_FILTER_ALL=y
 # CONFIG_CONTROLLER_PID_IMPROVED_BARO_Z_HOLD=y
 
-CONFIG_DECK_FORCE="bcUSD:bcLedRing:bcFlapperDeck"
+CONFIG_DECK_FORCE="bcUSD:bcFlapperDeck"
 CONFIG_DECK_FLAPPER=y
 CONFIG_DECK_USD=y
-CONFIG_DECK_LEDRING=y
+# The LED ring cannot be used with DSHOT: ws2812_cf2.c drives DMA1_Stream5 (TIM3_CH2,
+# channel 5) and DSHOT needs the same stream for M3 (TIM2_CH1, channel 3). There is no
+# alternative stream for either. ws2812_cf2.c compiles out its DMA1_Stream5 ISR under
+# DSHOT but still arms the stream with HT+TC interrupts in ws2812Init(), and the motors.c
+# handler never clears HTIF5 -> permanent interrupt storm and the board hangs at boot.
+CONFIG_DECK_LEDRING=n
 
 CONFIG_DECK_FLAPPER_EXTRX_ENABLE=n # Enable external receiver
 CONFIG_DECK_CPPM=y

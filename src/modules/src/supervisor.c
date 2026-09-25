@@ -209,6 +209,10 @@ static bool isRPMatArmingValid(SupervisorMem_t* this, const uint32_t currentTick
   uint32_t failingMask = 0;
 
   for (int i = 0; i < NBR_OF_MOTORS; i++) {
+    if (powerDistributionMotorType(i) == 0) {
+      // Outputs that drive a servo instead of an ESC never report RPM telemetry
+      continue;
+    }
     const uint16_t rpm = motorsGetRPM(i);
     if (rpm < rpmCheckMin || rpm > rpmCheckMax) {
       failingMask |= (1u << i);
@@ -237,6 +241,10 @@ static bool isMotorsNotResponding(SupervisorMem_t* this, const uint32_t currentT
 
   uint32_t failingMask = 0;
   for (int i = 0; i < NBR_OF_MOTORS; i++) {
+    if (powerDistributionMotorType(i) == 0) {
+      // Outputs that drive a servo instead of an ESC never report RPM telemetry
+      continue;
+    }
     const uint16_t rpm = motorsGetRPM(i);
     if (rpm != 0 && rpm != MOTORS_RPM_INVALID && rpm < motorsNotRespondingRpmThreshold) {
       failingMask |= (1u << i);

@@ -1,5 +1,6 @@
 obj-y += ak8963.o
 obj-y += cppm.o
+obj-$(CONFIG_MOTORS_DSHOT_FLAPPER_SERVOS) += dshot_servos.o
 obj-y += eeprom.o
 obj-y += exti.o
 obj-y += fatfs_sd.o

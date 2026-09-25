@@ -64,7 +64,7 @@
   6 - NVIC_VERY_HIGH_PRI
   5 -                                     <-- MAX_SYSCALL_INTERRUPT_PRIORITY
   4 ! NVIC_I2C_PRI_LOW NVIC_TRACE_TIM_PRI --- Does not call any RTOS function
-  3 ! NVIC_I2C_PRI_HIGH
+  3 ! NVIC_I2C_PRI_HIGH NVIC_SERVO_BITBANG_PRI
   2 !
   1 !
   0 !
@@ -94,6 +94,8 @@
 #define NVIC_WS2812_PRI       13
 #define NVIC_BMI088_SPI_PRI   7
 #define NVIC_USB_BSP_PRI      10
+// Bit-banged servo PWM, must not be delayed by FreeRTOS critical sections
+#define NVIC_SERVO_BITBANG_PRI 3
 
 
 // Priorities for external interrupts

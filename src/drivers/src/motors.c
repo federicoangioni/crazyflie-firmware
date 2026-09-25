@@ -48,6 +48,9 @@
 #include "nvicconf.h"
 #include "usec_time.h"
 #include "platform_defaults.h"
+#ifdef CONFIG_MOTORS_DSHOT_FLAPPER_SERVOS
+#include "dshot_servos.h"
+#endif
 //FreeRTOS includes
 #include "task.h"
 
@@ -317,6 +320,10 @@ void motorsInit(const MotorPerifDef** motorMapSelect)
 
 #ifdef CONFIG_MOTORS_ESC_PROTOCOL_DSHOT
   motorsDshotSetup();
+#ifdef CONFIG_MOTORS_DSHOT_FLAPPER_SERVOS
+  // Take the servo pins M1 and M3 away from TIM2
+  dshotServosInit(motorMap);
+#endif
 #else
   // Start the timers
   for (i = 0; i < NBR_OF_MOTORS; i++)
@@ -742,6 +749,11 @@ void motorsSetRatio(uint32_t id, uint16_t ithrust)
     if (motorMap[id]->drvType == BRUSHLESS)
     {
 #ifdef CONFIG_MOTORS_ESC_PROTOCOL_DSHOT
+#ifdef CONFIG_MOTORS_DSHOT_FLAPPER_SERVOS
+      // M1/M3 drive servos. Their DSHOT frames below are still sent on TIM2 (not
+      // connected to any pin) to keep the DSHOT sequencing of M2/M4 intact.
+      dshotServosSetRatio(id, ratio);
+#endif
       // Prepare DSHOT, firing it will be done synchronously with motorsBurstDshot.
       motorsPrepareDshot(id, ratio);
 #else
