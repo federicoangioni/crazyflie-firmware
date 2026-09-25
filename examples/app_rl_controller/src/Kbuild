@@ -1,0 +1,2 @@
+obj-y += rl_controller.o
+obj-y += neural_net.o
