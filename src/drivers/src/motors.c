@@ -285,6 +285,10 @@ void motorsInit(const MotorPerifDef** motorMapSelect)
     GPIO_InitStructure.GPIO_Mode = MOTORS_GPIO_MODE;
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;
     GPIO_InitStructure.GPIO_OType = motorMap[i]->gpioOType;
+#ifdef CONFIG_MOTORS_ESC_PROTOCOL_DSHOT_BIDIRECTIONAL
+    // The line idles high and is left in input capture between frames, don't let it float
+    GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;
+#endif
     GPIO_InitStructure.GPIO_Pin = motorMap[i]->gpioPin;
     GPIO_Init(motorMap[i]->gpioPort, &GPIO_InitStructure);
 
@@ -450,6 +454,23 @@ static void motorsDshotSetup()
   NVIC_Init(&NVIC_InitStructure);
 }
 
+#ifdef CONFIG_MOTORS_ESC_PROTOCOL_DSHOT_BIDIRECTIONAL
+// Switch the channel back from input capture to output compare. With a zero
+// pulse the line is driven to its idle (high) level.
+static void motorsDshotOutputChannelSetup(int id)
+{
+  TIM_OCInitTypeDef TIM_OCInitStructure;
+  TIM_OCInitStructure.TIM_OCMode = TIM_OCMode_PWM1;
+  TIM_OCInitStructure.TIM_OutputState = TIM_OutputState_Enable;
+  TIM_OCInitStructure.TIM_Pulse = 0;
+  TIM_OCInitStructure.TIM_OCPolarity = timPolarity;
+  TIM_OCInitStructure.TIM_OCIdleState = TIM_OCIdleState_Set;
+  // Configure Output Compare for PWM
+  motorMap[id]->ocInit(motorMap[id]->tim, &TIM_OCInitStructure);
+  motorMap[id]->preloadConfig(motorMap[id]->tim, TIM_OCPreload_Enable);
+}
+#endif
+
 static void motorsDshotOutputSetup(int id)
 {
 
@@ -461,15 +482,7 @@ static void motorsDshotOutputSetup(int id)
   TIM_Cmd(motorMap[id]->tim, ENABLE);
 
 #ifdef CONFIG_MOTORS_ESC_PROTOCOL_DSHOT_BIDIRECTIONAL
-  TIM_OCInitTypeDef TIM_OCInitStructure;
-  TIM_OCInitStructure.TIM_OCMode = TIM_OCMode_PWM1;
-  TIM_OCInitStructure.TIM_OutputState = TIM_OutputState_Enable;
-  TIM_OCInitStructure.TIM_Pulse = 0;
-  TIM_OCInitStructure.TIM_OCPolarity = timPolarity;
-  TIM_OCInitStructure.TIM_OCIdleState = TIM_OCIdleState_Set;
-  // Configure Output Compare for PWM
-  motorMap[id]->ocInit(motorMap[id]->tim, &TIM_OCInitStructure);
-  motorMap[id]->preloadConfig(motorMap[id]->tim, TIM_OCPreload_Enable);
+  motorsDshotOutputChannelSetup(id);
 #endif
 
   DMA_InitStructureShare.DMA_BufferSize = DSHOT_DMA_BUFFER_SIZE;
@@ -485,6 +498,18 @@ static void motorsDshotInputSetup(int id)
 {
   dshotState[id] = DSHOT_STATE_INPUT;
 
+#ifdef CONFIG_MOTORS_DSHOT_FLAPPER_SERVOS
+  if (dshotState[MOTOR_M2] == DSHOT_STATE_INPUT &&
+      dshotState[MOTOR_M4] == DSHOT_STATE_INPUT) {
+    // Both ESC frames are sent, end the telemetry reception of both in TIM2_IRQHandler after 100us
+    TIM_Cmd(TIM2, DISABLE);
+    TIM2->ARR = TIM_CLOCK_HZ / 10000; // 100us max interval
+    TIM2->CNT = 0;
+    TIM_ClearITPendingBit(TIM2, TIM_IT_Update);
+    TIM_ITConfig(TIM2, TIM_IT_Update, ENABLE);
+    TIM_Cmd(TIM2, ENABLE);
+  }
+#else
   if (dshotState[0] == DSHOT_STATE_INPUT &&
       dshotState[2] == DSHOT_STATE_INPUT &&
       dshotState[3] == DSHOT_STATE_INPUT) {
@@ -505,6 +530,7 @@ static void motorsDshotInputSetup(int id)
     motorMap[1]->tim->CNT = 0;
     TIM_Cmd(motorMap[1]->tim, ENABLE);
    }
+#endif
 
   TIM_ICInitTypeDef TIM_ICInitStructure;
   
@@ -657,6 +683,33 @@ static void motorsPrepareDshot(uint32_t id, uint16_t ratio)
 
 }
 
+#ifdef CONFIG_MOTORS_DSHOT_FLAPPER_SERVOS
+/**
+ * M1 and M3 drive servos from other timers, so only M2 and M4 send DSHOT. Their
+ * TIM2_CH2/CH1 DMA streams are never enabled, which leaves the TIM2_CH4 request
+ * to the M2 stream alone and lets M2 and M4 be sent at the same time.
+ */
+void motorsBurstDshot()
+{
+  dshotState[MOTOR_M2] = DSHOT_STATE_OUTPUT;
+  dshotState[MOTOR_M4] = DSHOT_STATE_OUTPUT;
+
+  motorsDshotOutputSetup(MOTOR_M2);
+  motorsDshotOutputSetup(MOTOR_M4);
+
+  DMA_ClearITPendingBit(motorMap[MOTOR_M2]->DMA_stream, motorMap[MOTOR_M2]->DMA_ITFlag_TC);
+  TIM_DMACmd(motorMap[MOTOR_M2]->tim, motorMap[MOTOR_M2]->TIM_DMASource, ENABLE);
+  DMA_ITConfig(motorMap[MOTOR_M2]->DMA_stream, DMA_IT_TC, ENABLE);
+
+  DMA_ClearITPendingBit(motorMap[MOTOR_M4]->DMA_stream, motorMap[MOTOR_M4]->DMA_ITFlag_TC);
+  TIM_DMACmd(motorMap[MOTOR_M4]->tim, motorMap[MOTOR_M4]->TIM_DMASource, ENABLE);
+  DMA_ITConfig(motorMap[MOTOR_M4]->DMA_stream, DMA_IT_TC, ENABLE);
+
+  /* Enable DMA TIM Stream at once*/
+  DMA_Cmd(motorMap[MOTOR_M2]->DMA_stream, ENABLE);
+  DMA_Cmd(motorMap[MOTOR_M4]->DMA_stream, ENABLE);
+}
+#else
 /**
  * Unfortunately the TIM2_CH2 (M1) and TIM2_CH4 (M2) share DMA channel 3 request and can't
  * be used at the same time. Solved by running after each other and TIM2_CH2
@@ -702,6 +755,7 @@ void motorsBurstDshot()
   DMA_Cmd(motorMap[2]->DMA_stream, ENABLE);
   DMA_Cmd(motorMap[3]->DMA_stream, ENABLE);
 }
+#endif
 
 #endif
 
@@ -750,12 +804,17 @@ void motorsSetRatio(uint32_t id, uint16_t ithrust)
     {
 #ifdef CONFIG_MOTORS_ESC_PROTOCOL_DSHOT
 #ifdef CONFIG_MOTORS_DSHOT_FLAPPER_SERVOS
-      // M1/M3 drive servos. Their DSHOT frames below are still sent on TIM2 (not
-      // connected to any pin) to keep the DSHOT sequencing of M2/M4 intact.
-      dshotServosSetRatio(id, ratio);
+      // M1/M3 drive servos from other timers and send no DSHOT.
+      if (id == MOTOR_M1 || id == MOTOR_M3)
+      {
+        dshotServosSetRatio(id, ratio);
+      }
+      else
 #endif
-      // Prepare DSHOT, firing it will be done synchronously with motorsBurstDshot.
-      motorsPrepareDshot(id, ratio);
+      {
+        // Prepare DSHOT, firing it will be done synchronously with motorsBurstDshot.
+        motorsPrepareDshot(id, ratio);
+      }
 #else
       motorMap[id]->setCompare(motorMap[id]->tim, motorsBLConv16ToBits(ratio));
 #endif
@@ -1013,6 +1072,31 @@ void __attribute__((used)) DMA1_Stream7_IRQHandler(void)  // M2
 #endif
 }
 
+#ifdef CONFIG_MOTORS_DSHOT_FLAPPER_SERVOS
+#ifdef CONFIG_MOTORS_ESC_PROTOCOL_DSHOT_BIDIRECTIONAL
+// Used to timeout terminate receiving for M2 and M4.
+void __attribute__((used)) TIM2_IRQHandler(void)
+{
+  TIM_ClearITPendingBit(TIM2, TIM_IT_Update);
+  TIM_ITConfig(TIM2, TIM_IT_Update, DISABLE);
+
+  // Stop the input DMA transfers, their DMA interrupts then decode the telemetry.
+  // The TIM DMA requests are disabled first so that no capture request reaches a
+  // stream once its channel is switched back to output compare below.
+  TIM_DMACmd(TIM2, motorMap[MOTOR_M2]->TIM_DMASource | motorMap[MOTOR_M4]->TIM_DMASource, DISABLE);
+  DMA_Cmd(motorMap[MOTOR_M2]->DMA_stream, DISABLE);
+  DMA_Cmd(motorMap[MOTOR_M4]->DMA_stream, DISABLE);
+  while (DMA_GetCmdStatus(motorMap[MOTOR_M2]->DMA_stream) != DISABLE ||
+         DMA_GetCmdStatus(motorMap[MOTOR_M4]->DMA_stream) != DISABLE)
+  {
+  }
+
+  // Drive the lines to idle until the next frame instead of leaving them floating
+  motorsDshotOutputChannelSetup(MOTOR_M2);
+  motorsDshotOutputChannelSetup(MOTOR_M4);
+}
+#endif
+#else
 // Used to start M2 and timeout terminate receiving for M1, M3 and M4.
 void __attribute__((used)) TIM2_IRQHandler(void)
 {
@@ -1031,6 +1115,7 @@ void __attribute__((used)) TIM2_IRQHandler(void)
   /* Enable DMA TIM Stream */
   DMA_Cmd(motorMap[1]->DMA_stream, ENABLE);
 }
+#endif
 #endif
 
 

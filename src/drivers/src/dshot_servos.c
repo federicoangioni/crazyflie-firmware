@@ -32,9 +32,9 @@
  *   above configMAX_SYSCALL_INTERRUPT_PRIORITY so FreeRTOS critical sections
  *   do not add jitter; it must therefore never call any FreeRTOS function.
  *
- * M1 and M3 stay in the DSHOT motor map: the bidirectional DSHOT sequencing
- * waits for their DMA transfers (M2 is started from the M1 DMA interrupt), so
- * TIM2_CH1/CH2 keep running internally without being connected to a pin.
+ * M1 and M3 send no DSHOT: motors.c never enables their TIM2_CH1/CH2 DMA
+ * streams, so M2 (TIM2_CH4, whose DMA request is shared with TIM2_CH2) can be
+ * sent at the same time as M4.
  *
  * TIM5 is shared with the buzzer deck, the rpm deck and the servo deck on
  * TX2/RX2, which must therefore be disabled when this driver is used.
