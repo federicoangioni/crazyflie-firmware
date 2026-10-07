@@ -20,7 +20,7 @@ CONFIG_MOTORS_DSHOT_PWM_300KHZ=y
 CONFIG_MOTORS_ESC_PROTOCOL_DSHOT_BIDIRECTIONAL=y
 # Verify against the actual Flapper motor before trusting the RPM scale: count the rotor
 # magnets. RPM is computed as eRPM * 2 / poles.
-CONFIG_MOTORS_NBR_OF_POLES=10
+CONFIG_MOTORS_NBR_OF_POLES=12
 # The flapping motors do not spin while arming (idleThrust is 0), so the RPM arming check
 # (which expects idle RPM in [MIN, MAX]) can never pass. Accept any value, including invalid.
 CONFIG_MOTORS_ARMING_RPM_MIN=0
